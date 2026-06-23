@@ -18,6 +18,7 @@ SAMPLE_GAMES = [
         "title": "Dragon's Quest: Text Adventure",
         "description": "Embark on an epic text-based adventure to defeat the dragon and save the kingdom. Make choices that affect your destiny!",
         "tags": ["adventure", "text-based", "fantasy"],
+        "cover_url": "https://picsum.photos/seed/dragon/400/300",
         "game_type": "text_adventure",
         "html": """<!DOCTYPE html>
 <html lang="en">
@@ -81,6 +82,7 @@ render();
         "title": "Memory Card Match",
         "description": "Test your memory! Flip cards and find matching pairs. How few moves can you complete it in?",
         "tags": ["puzzle", "memory", "casual"],
+        "cover_url": "https://picsum.photos/seed/memory/400/300",
         "game_type": "puzzle",
         "html": """<!DOCTYPE html>
 <html lang="en">
@@ -157,6 +159,7 @@ initGame();
         "title": "Space Shooter",
         "description": "Defend Earth from alien invaders! Use arrow keys to move and spacebar to shoot. How long can you survive?",
         "tags": ["action", "shooter", "space"],
+        "cover_url": "https://picsum.photos/seed/space/400/300",
         "game_type": "action",
         "html": """<!DOCTYPE html>
 <html lang="en">
@@ -285,6 +288,7 @@ def seed():
             game = Game(
                 title=game_data["title"],
                 description=game_data["description"],
+                cover_url=game_data.get("cover_url", ""),
                 author_id=demo_user.id,
                 tags=game_data["tags"],
                 status="published",
