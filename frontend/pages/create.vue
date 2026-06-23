@@ -4,3 +4,9 @@
     <p class="text-gray-500">Create page — to be implemented in Stage 5</p>
   </div>
 </template>
+
+<script setup lang="ts">
+definePageMeta({
+  middleware: 'auth',
+})
+</script>
