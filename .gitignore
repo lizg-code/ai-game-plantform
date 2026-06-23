@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node / Nuxt
+node_modules/
+.nuxt/
+.output/
+dist/
+.nitro/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-data/
+
+# Alembic
+alembic/versions/*.pyc
+
+# Uploads
+uploads/
+
+# Logs
+*.log
