@@ -89,14 +89,14 @@ Output ONLY the complete HTML code starting with <!DOCTYPE html>. No explanation
 ]
 
 
-async def call_minimax(system_prompt: str, user_message: str) -> str:
-    """Call MiniMax API and return the assistant's response text."""
+async def call_llm(system_prompt: str, user_message: str) -> str:
+    """Call Mimo LLM API (OpenAI compatible) and return the assistant's response text."""
     headers = {
-        "Authorization": f"Bearer {settings.MINIMAX_API_KEY}",
+        "Authorization": f"Bearer {settings.MIMO_API_KEY}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": settings.MINIMAX_MODEL,
+        "model": settings.LLM_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -104,12 +104,16 @@ async def call_minimax(system_prompt: str, user_message: str) -> str:
         "temperature": 0.7,
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(settings.MINIMAX_API_URL, json=payload, headers=headers)
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(
+            f"{settings.MIMO_BASE_URL}/chat/completions",
+            json=payload,
+            headers=headers,
+        )
         resp.raise_for_status()
         data = resp.json()
 
-    # MiniMax response format
+    # OpenAI-compatible response format
     choices = data.get("choices", [])
     if choices:
         return choices[0].get("message", {}).get("content", "")
@@ -163,7 +167,7 @@ async def run_generation(db: Session, game_id: int):
         update_log(db, log1, "running", output={})
         try:
             prompt1 = STEPS[0]["prompt_template"].format(user_prompt=game.user_prompt)
-            result1 = await call_minimax("You are a game design analyst.", prompt1)
+            result1 = await call_llm("You are a game design analyst.", prompt1)
             # Try to parse JSON from response
             creative_data = extract_json(result1)
             update_log(db, log1, "success", output=creative_data)
@@ -179,7 +183,7 @@ async def run_generation(db: Session, game_id: int):
         update_log(db, log2, "running", output={})
         try:
             prompt2 = STEPS[1]["prompt_template"].format(creative_analysis=context["creative_analysis"])
-            result2 = await call_minimax("You are a game designer.", prompt2)
+            result2 = await call_llm("You are a game designer.", prompt2)
             design_data = extract_json(result2)
             update_log(db, log2, "success", output=design_data)
             context["game_design"] = json.dumps(design_data, ensure_ascii=False)
@@ -199,7 +203,7 @@ async def run_generation(db: Session, game_id: int):
         update_log(db, log3, "running", output={})
         try:
             prompt3 = STEPS[2]["prompt_template"].format(game_design=context["game_design"])
-            html_content = await call_minimax("You are an expert web game developer.", prompt3)
+            html_content = await call_llm("You are an expert web game developer.", prompt3)
             # Clean up: extract HTML if wrapped in markdown code block
             html_content = clean_html(html_content)
             update_log(db, log3, "success", output={"html_length": len(html_content)})

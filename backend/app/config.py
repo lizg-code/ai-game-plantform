@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
 
-    # MiniMax LLM
-    MINIMAX_API_KEY: str = ""
-    MINIMAX_API_URL: str = "https://api.minimax.chat/v1/text/chatcompletion_v2"
-    MINIMAX_MODEL: str = "MiniMax-Text-01"
+    # LLM (Mimo - OpenAI compatible)
+    MIMO_API_KEY: str = ""
+    MIMO_BASE_URL: str = "https://token-plan-cn.xiaomimimo.com/v1"
+    LLM_MODEL: str = "mimo-v2.5-pro"
 
     # App
     APP_ENV: str = "development"
