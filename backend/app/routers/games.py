@@ -34,7 +34,16 @@ def list_games(
         query = query.filter(Game.tags.contains(tag))
     total = query.count()
     games = query.order_by(Game.created_at.desc()).offset((page - 1) * size).limit(size).all()
-    return GameListResponse(total=total, games=[GameResponse.model_validate(g) for g in games])
+
+    # Build response with author nickname
+    result = []
+    for g in games:
+        resp = GameResponse.model_validate(g)
+        author = db.query(User).filter(User.id == g.author_id).first()
+        resp.author_nickname = author.nickname if author else "Unknown"
+        result.append(resp)
+
+    return GameListResponse(total=total, games=result)
 
 
 @router.get("/{game_id}", response_model=GameResponse)
@@ -43,7 +52,10 @@ def get_game(game_id: int, db: Session = Depends(get_db)):
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    return GameResponse.model_validate(game)
+    resp = GameResponse.model_validate(game)
+    author = db.query(User).filter(User.id == game.author_id).first()
+    resp.author_nickname = author.nickname if author else "Unknown"
+    return resp
 
 
 @router.post("/generate", response_model=GenerateResponse)

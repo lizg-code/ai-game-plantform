@@ -15,6 +15,7 @@ class GameResponse(BaseModel):
     description: str
     cover_url: str
     author_id: int
+    author_nickname: str = ""
     tags: List[str]
     status: str
     remote_url: str
