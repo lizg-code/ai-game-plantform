@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache()
