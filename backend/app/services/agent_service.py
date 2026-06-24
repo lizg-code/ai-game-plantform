@@ -11,6 +11,7 @@ Workflow:
 import uuid
 import json
 import httpx
+import traceback
 from datetime import datetime
 from sqlalchemy.orm import Session
 
@@ -46,50 +47,49 @@ Respond in the following JSON format ONLY (no extra text):
     {
         "name": "game_design",
         "order": 2,
-        "prompt_template": """You are a game designer. Based on the following game concept, create a detailed game design document.
+        "prompt_template": """You are a game designer. Based on the following game concept, create a CONCISE game design document. Keep descriptions short — this will be used to generate code, not a design bible.
 
 Game Concept:
 {creative_analysis}
 
 Respond in the following JSON format ONLY (no extra text):
 {{
-  "title": "game title",
-  "description": "one-paragraph game description for players",
-  "ui_layout": "description of screen layout and UI elements",
-  "gameplay_rules": ["list of rules"],
-  "levels": ["list of level descriptions or stages"],
-  "assets_needed": ["list of visual/audio assets needed"],
-  "interaction_model": "how the player interacts (click, keyboard, drag, etc.)",
-  "scoring": "how scoring works",
-  "difficulty_curve": "how difficulty progresses"
+  "title": "short game title",
+  "description": "one sentence description",
+  "gameplay_rules": ["3-5 core rules, each one sentence"],
+  "interaction_model": "controls (keyboard/click/touch)",
+  "scoring": "brief scoring rule"
 }}""",
     },
     {
         "name": "code_generation",
         "order": 3,
-        "prompt_template": """You are an expert web game developer. Generate a complete, runnable HTML file for an interactive browser game based on the following design.
+        "prompt_template": """You are an expert web game developer. Generate a complete, runnable HTML file for a simple browser game based on the following design.
 
 Game Design:
 {game_design}
 
 Requirements:
-1. The output must be a SINGLE self-contained HTML file with all CSS and JS inline
-2. The game must be fully playable in a browser
-3. Use Canvas or DOM manipulation for rendering
-4. Include clear instructions for the player
-5. Include a score/progress system
-6. Include a game over screen with option to restart
-7. Make it visually appealing with CSS styling
-8. The game should be fun and engaging
-9. Keep the code clean and well-structured
-10. Do NOT use any external dependencies or CDN links
+1. SINGLE self-contained HTML file, all CSS and JS inline
+2. Focus on CORE GAMEPLAY only — implement the basic mechanics, skip fancy visual effects, particles, music
+3. Use Canvas for rendering
+4. Clean, minimal UI with score display and game-over screen with restart
+5. Simple but polished visual style (solid colors, no complex animations)
+6. Keep the code SHORT — aim for under 500 lines total
+7. No external dependencies or CDN links
+8. Must be immediately playable
 
-Output ONLY the complete HTML code starting with <!DOCTYPE html>. No explanations before or after.""",
+Output ONLY the complete HTML code starting with <!DOCTYPE html>. No explanations.""",
+    },
+    {
+        "name": "upload",
+        "order": 4,
+        "prompt_template": "",  # No LLM call needed for upload
     },
 ]
 
 
-async def call_llm(system_prompt: str, user_message: str) -> str:
+async def call_llm(system_prompt: str, user_message: str, timeout: float = 120.0, stream: bool = False) -> str:
     """Call Mimo LLM API (OpenAI compatible) and return the assistant's response text."""
     headers = {
         "Authorization": f"Bearer {settings.MIMO_API_KEY}",
@@ -104,13 +104,17 @@ async def call_llm(system_prompt: str, user_message: str) -> str:
         "temperature": 0.7,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    if stream:
+        return await _call_llm_streaming(headers, payload, timeout)
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
             f"{settings.MIMO_BASE_URL}/chat/completions",
             json=payload,
             headers=headers,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            raise ValueError(f"LLM API error {resp.status_code}: {resp.text[:500]}")
         data = resp.json()
 
     # OpenAI-compatible response format
@@ -118,6 +122,42 @@ async def call_llm(system_prompt: str, user_message: str) -> str:
     if choices:
         return choices[0].get("message", {}).get("content", "")
     return ""
+
+
+async def _call_llm_streaming(headers: dict, payload: dict, timeout: float) -> str:
+    """Stream LLM response using SSE to avoid read timeouts on long generations."""
+    payload["stream"] = True
+    content_parts = []
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=30.0, read=timeout, write=30.0, pool=30.0)) as client:
+        async with client.stream(
+            "POST",
+            f"{settings.MIMO_BASE_URL}/chat/completions",
+            json=payload,
+            headers=headers,
+        ) as resp:
+            if resp.status_code != 200:
+                body = await resp.aread()
+                raise ValueError(f"LLM API error {resp.status_code}: {body.decode()[:500]}")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    content = delta.get("content")
+                    if content:
+                        content_parts.append(content)
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    continue
+
+    return "".join(content_parts)
 
 
 def create_agent_logs(db: Session, game_id: int):
@@ -173,7 +213,7 @@ async def run_generation(db: Session, game_id: int):
             update_log(db, log1, "success", output=creative_data)
             context["creative_analysis"] = json.dumps(creative_data, ensure_ascii=False)
         except Exception as e:
-            update_log(db, log1, "failed", error=str(e))
+            update_log(db, log1, "failed", error=f"{type(e).__name__}: {e}")
             game.status = "failed"
             db.commit()
             return
@@ -190,10 +230,10 @@ async def run_generation(db: Session, game_id: int):
             game.design_doc = design_data
             game.title = design_data.get("title", game.title)
             game.description = design_data.get("description", game.description)
-            game.game_type = design_data.get("game_type", context.get("creative_analysis", {}).get("game_type", ""))
+            game.game_type = design_data.get("game_type", creative_data.get("game_type", ""))
             db.commit()
         except Exception as e:
-            update_log(db, log2, "failed", error=str(e))
+            update_log(db, log2, "failed", error=f"{type(e).__name__}: {e}")
             game.status = "failed"
             db.commit()
             return
@@ -203,13 +243,15 @@ async def run_generation(db: Session, game_id: int):
         update_log(db, log3, "running", output={})
         try:
             prompt3 = STEPS[2]["prompt_template"].format(game_design=context["game_design"])
-            html_content = await call_llm("You are an expert web game developer.", prompt3)
+            html_content = await call_llm("You are an expert web game developer.", prompt3, timeout=600.0, stream=True)
             # Clean up: extract HTML if wrapped in markdown code block
             html_content = clean_html(html_content)
+            if not html_content or "<html" not in html_content.lower():
+                raise ValueError(f"LLM did not return valid HTML. Got: {html_content[:300]}")
             update_log(db, log3, "success", output={"html_length": len(html_content)})
             context["html_content"] = html_content
         except Exception as e:
-            update_log(db, log3, "failed", error=str(e))
+            update_log(db, log3, "failed", error=f"{type(e).__name__}: {e}")
             game.status = "failed"
             db.commit()
             return
@@ -218,21 +260,42 @@ async def run_generation(db: Session, game_id: int):
         log4 = log_map["upload"]
         update_log(db, log4, "running", output={})
         try:
+            import asyncio as _asyncio
             filename = f"{uuid.uuid4().hex}.html"
-            remote_url = upload_html_content(context["html_content"], filename)
+            # Run blocking upload in a thread to avoid blocking the event loop
+            remote_url = await _asyncio.to_thread(upload_html_content, context["html_content"], filename)
             game.remote_url = remote_url
             game.status = "draft"  # Ready for preview, not yet published
             update_log(db, log4, "success", output={"remote_url": remote_url})
             db.commit()
         except Exception as e:
-            update_log(db, log4, "failed", error=str(e))
-            game.status = "failed"
-            db.commit()
+            error_msg = f"{type(e).__name__}: {e}"
+            print(f"[Agent] Step 4 upload failed: {error_msg}")  # server-side log
+            try:
+                update_log(db, log4, "failed", error=error_msg)
+                game.status = "failed"
+                db.commit()
+            except Exception:
+                pass
             return
 
     except Exception as e:
-        game.status = "failed"
-        db.commit()
+        # Mark the last running step as failed so the frontend can show the error
+        error_detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        try:
+            for log in logs:
+                if log.status == "running":
+                    update_log(db, log, "failed", error=error_detail[:1000])
+                    break
+            game.status = "failed"
+            db.commit()
+        except Exception:
+            # Last resort: ensure game is marked failed even if log update fails
+            try:
+                game.status = "failed"
+                db.commit()
+            except Exception:
+                pass
 
 
 def extract_json(text: str) -> dict:

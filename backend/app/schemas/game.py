@@ -18,7 +18,7 @@ class GameResponse(BaseModel):
     author_nickname: str = ""
     tags: List[str]
     status: str
-    remote_url: str
+    remote_url: Optional[str] = ""
     game_type: str
     created_at: datetime
     updated_at: datetime
@@ -62,5 +62,5 @@ class AgentLogResponse(BaseModel):
 class GameStatusResponse(BaseModel):
     game_id: int
     status: str
-    remote_url: str
+    remote_url: Optional[str] = ""
     logs: List[AgentLogResponse]
